@@ -40,14 +40,11 @@ class AwsHelper
 
     if target_instances.count == 0
       puts "No target instances found."
-      exit 0
+      return 1, 0
     elsif target_instances.count == 1
       add_instances(1)
       puts "Added one new instance. Sleeping for #{INSTANCE_STARTUP_TIME}s before rebooting existing instance."
-      for i in 0..INSTANCE_STARTUP_TIME
-        print "\r#{i}..."
-        sleep 1
-      end
+      verbose_sleep(INSTANCE_STARTUP_TIME)
     else
       puts "Waiting for [#{wait_instance_count}] instance(s) to reboot before rebooting the remainder without delay."
     end
@@ -58,13 +55,13 @@ class AwsHelper
         puts "Stopping #{instance.id} (#{instance.tags['Name']},#{instance.private_ip_address}).\n"
         if instance_stop_and_wait(instance, REBOOT_TIMEOUT)
           puts "  timed-out after #{REBOOT_TIMEOUT} seconds."
-          exit 1
+          return 2, i
         end
 
         puts  "  starting #{instance.id}.\n"
         if instance_start_and_wait(instance, REBOOT_TIMEOUT)
           puts "  timed-out after #{REBOOT_TIMEOUT} seconds."
-          exit 1
+          return 3, i
         else
           puts "  state of #{instance.id} changed to running.\n"
         end
@@ -74,47 +71,13 @@ class AwsHelper
       end
       i += 1
     end
-  end
 
-  def get_self_instance_id
-    begin
-      http = Net::HTTP.new(METADATA_URI.host, METADATA_URI.port)
-      http.open_timeout = 1
-      http.read_timeout = 1
-      http.get("#{METADATA_URI.path}/instance-id").body
-    rescue Net::OpenTimeout
-      "NOT_AN_EC2_INSTANCE"
-    end
+    return 0, i-1
   end
 
   def get_leader_instance_id
     instances = get_running_worker_instances
     instances.map(&:id).sort[0]
-  end
-
-  # v2 of aws-sdk has built-in wait states but v1 doesn't :(
-  def instance_stop_and_wait(instance, timeout=60)
-    instance.stop
-
-    j = 0
-    until instance.status == :stopped || j > timeout
-      sleep(1)
-      j += 1
-    end
-
-    return j > timeout
-  end
-
-  def instance_start_and_wait(instance, timeout=60)
-    instance.start
-
-    j = 0
-    until instance.status == :running || j > timeout
-      sleep(1)
-      j += 1
-    end
-
-    return j > timeout
   end
 
   def add_instances(num)
@@ -142,7 +105,7 @@ class AwsHelper
 
       @@logger.info "Setting desired capacity to #{desired_capacity} instances."
 
-      autoscale.set_desired_capacity(
+      @@client.autoscale.set_desired_capacity(
         auto_scaling_group_name: resource_name,
         desired_capacity: desired_capacity
       )
@@ -151,26 +114,6 @@ class AwsHelper
     else
       @@logger.error "Could not find an autoscale group name starting with [#{CONFIG_NAME_BASE}]."
     end
-  end
-
-  def create_launch_configuration(ami_id)
-    launch_configuration_name = get_available_launch_configuration_name(autoscale)
-
-    @@client.autoscale.create_launch_configuration({
-      launch_configuration_name: launch_configuration_name,
-      key_name: "id_lens10",
-      security_groups: ["sg-57142f2e"],
-      image_id: ami_id,
-      instance_type: "t2.large",
-      instance_monitoring: {
-        enabled: false,
-      },
-      ebs_optimized: false,
-      associate_public_ip_address: false,
-      placement_tenancy: "default"
-    })
-
-    return launch_configuration_name
   end
 
   def create_autoscale_group(ami_id)
@@ -201,14 +144,65 @@ class AwsHelper
     return autoscale_group_name
   end
 
-  def get_available_launch_configuration_name(autoscale)
+private
+  def get_running_worker_instances
+    all_running_instances = @@client.ec2.instances.filter('instance-state-name', 'running')
+    running_worker_instances = all_running_instances.with_tag('project', PROJECT_TAG).with_tag('environment', RAILS_ENV)
+  end
+
+  # v2 of aws-sdk has built-in wait states but v1 doesn't :(
+  def instance_stop_and_wait(instance, timeout=REBOOT_TIMEOUT)
+    instance.stop
+
+    j = 0
+    until instance.status == :stopped || j > timeout
+      sleep(1)
+      j += 1
+    end
+
+    return j > timeout
+  end
+
+  def instance_start_and_wait(instance, timeout=REBOOT_TIMEOUT)
+    instance.start
+
+    j = 0
+    until instance.status == :running || j > timeout
+      sleep(1)
+      j += 1
+    end
+
+    return j > timeout
+  end
+
+  def create_launch_configuration(ami_id)
+    launch_configuration_name = get_available_launch_configuration_name
+
+    @@client.autoscale.create_launch_configuration({
+      launch_configuration_name: launch_configuration_name,
+      key_name: 'id_lens10',
+      security_groups: ['sg-57142f2e'],
+      image_id: ami_id,
+      instance_type: 't2.large',
+      instance_monitoring: {
+        enabled: false,
+      },
+      ebs_optimized: false,
+      associate_public_ip_address: false,
+      placement_tenancy: "default"
+    })
+
+    return launch_configuration_name
+  end
+
+  def get_available_launch_configuration_name
     i = 1
     launch_configuration_name = "#{CONFIG_NAME_BASE}#{Date.today.iso8601}_#{i}"
-    lc = autoscale.describe_launch_configurations({launch_configuration_names: [launch_configuration_name]})
+    lc = @@client.autoscale.describe_launch_configurations({launch_configuration_names: [launch_configuration_name]})
     until 0 == lc.launch_configurations.count
       i += 1
       launch_configuration_name = "#{CONFIG_NAME_BASE}#{Date.today.iso8601}_#{i}"
-      lc = autoscale.describe_launch_configurations({launch_configuration_names: [launch_configuration_name]})
+      lc = @@client.autoscale.describe_launch_configurations({launch_configuration_names: [launch_configuration_name]})
     end
 
     return launch_configuration_name
@@ -273,10 +267,15 @@ class AwsHelper
     })
   end
 
-private
-  def get_running_worker_instances
-    all_running_instances = @@client.ec2.instances.filter('instance-state-name', 'running')
-    running_worker_instances = all_running_instances.with_tag('project', PROJECT_TAG).with_tag('environment', RAILS_ENV)
+  def verbose_sleep(seconds)
+    if STDOUT.isatty
+      for i in 0..INSTANCE_STARTUP_TIME
+        print "\r#{i}..."
+        sleep 1
+      end
+    else
+      sleep INSTANCE_STARTUP_TIME
+    end
   end
 
 end
