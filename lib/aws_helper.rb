@@ -1,6 +1,7 @@
 class AwsHelper
   require 'aws_helper/client.rb'
   require 'net/http'
+  require 'logger'
 
   PROJECT_TAG = 'tagtrue'
   RAILS_ENV = ENV['RAILS_ENV'] || 'development'
@@ -16,6 +17,19 @@ class AwsHelper
 
   def initialize
     @@client = AwsHelper::Client.new
+    @@logger = defined?(Rails.logger) || Logger.new(STDOUT)
+    @@logger.level = ENV['LOG_LEVEL'] ?  Logger.const_get(ENV['LOG_LEVEL'].upcase) : Logger::WARN
+  end
+
+  def self.get_self_instance_id
+    begin
+      http = Net::HTTP.new(METADATA_URI.host, METADATA_URI.port)
+      http.open_timeout = 1
+      http.read_timeout = 1
+      http.get("#{METADATA_URI.path}/instance-id").body
+    rescue Net::OpenTimeout
+      "NOT_AN_EC2_INSTANCE"
+    end
   end
 
   def reboot_instances
@@ -116,17 +130,17 @@ class AwsHelper
 
     if resource_name.start_with?(CONFIG_NAME_BASE)
       if desired_capacity == WORKER_INSTANCE_LIMIT
-        Rails.logger.error "Limit of #{WORKER_INSTANCE_LIMIT} reached; not scaling-up."
+        @@logger.error "Limit of #{WORKER_INSTANCE_LIMIT} reached; not scaling-up."
         return WORKER_INSTANCE_LIMIT
       end
 
       desired_capacity += num
       if desired_capacity > WORKER_INSTANCE_LIMIT
-        Rails.logger.warn "Desired capacity of #{desired_capacity} limited to #{WORKER_INSTANCE_LIMIT}."
+        @@logger.warn "Desired capacity of #{desired_capacity} limited to #{WORKER_INSTANCE_LIMIT}."
         desired_capacity = WORKER_INSTANCE_LIMIT
       end
 
-      Rails.logger.info "Setting desired capacity to #{desired_capacity} instances."
+      @@logger.info "Setting desired capacity to #{desired_capacity} instances."
 
       autoscale.set_desired_capacity(
         auto_scaling_group_name: resource_name,
@@ -135,7 +149,7 @@ class AwsHelper
 
       return desired_capacity
     else
-      Rails.logger.error "Could not find an autoscale group name starting with [#{CONFIG_NAME_BASE}]."
+      @@logger.error "Could not find an autoscale group name starting with [#{CONFIG_NAME_BASE}]."
     end
   end
 
