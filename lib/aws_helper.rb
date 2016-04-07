@@ -13,8 +13,6 @@ class AwsHelper
   REBOOT_TIMEOUT = 60 # seconds
   INSTANCE_STARTUP_TIME = 240 # seconds - measured at 220s so add a bit of room.
 
-# TODO: convert puts to Logger
-
   def initialize
     @@client = AwsHelper::Client.new
     @@logger = defined?(Rails.logger) || Logger.new(STDOUT)
@@ -36,37 +34,37 @@ class AwsHelper
     target_instances = get_running_worker_instances
     wait_instance_count = (target_instances.count*REBOOT_WAIT_COUNT_PCT).to_i
 
-    puts "Found [#{target_instances.count}] [#{RAILS_ENV}] instance(s) of [#{PROJECT_TAG}] to reboot."
+    @@logger.info {"Found [#{target_instances.count}] [#{RAILS_ENV}] instance(s) of [#{PROJECT_TAG}] to reboot."}
 
     if target_instances.count == 0
-      puts "No target instances found."
+      @@logger.warn {"No target instances found."}
       return 1, 0
     elsif target_instances.count == 1
       add_instances(1)
-      puts "Added one new instance. Sleeping for #{INSTANCE_STARTUP_TIME}s before rebooting existing instance."
+      @@logger.debug {"Added one new instance. Sleeping for #{INSTANCE_STARTUP_TIME}s before rebooting existing instance."}
       verbose_sleep(INSTANCE_STARTUP_TIME)
     else
-      puts "Waiting for [#{wait_instance_count}] instance(s) to reboot before rebooting the remainder without delay."
+      @@logger.info {"Waiting for [#{wait_instance_count}] instance(s) to reboot before rebooting the remainder without delay."}
     end
 
     i = 0
     target_instances.each do |instance|
       if wait_instance_count > i
-        puts "Stopping #{instance.id} (#{instance.tags['Name']},#{instance.private_ip_address}).\n"
+        @@logger.info {"Stopping #{instance.id} (#{instance.tags['Name']},#{instance.private_ip_address})."}
         if instance_stop_and_wait(instance, REBOOT_TIMEOUT)
-          puts "  timed-out after #{REBOOT_TIMEOUT} seconds."
+          @@logger.error {"Timed-out waiting for #{instance.id} to stop."}
           return 2, i
         end
 
-        puts  "  starting #{instance.id}.\n"
+        @@logger.info  {"Starting #{instance.id}."}
         if instance_start_and_wait(instance, REBOOT_TIMEOUT)
-          puts "  timed-out after #{REBOOT_TIMEOUT} seconds."
+          @@logger.error {"Timed-out waiting for #{instance.id} to start."}
           return 3, i
         else
-          puts "  state of #{instance.id} changed to running.\n"
+          @@logger.debug {"State of #{instance.id} changed to running."}
         end
       else
-        puts  "Rebooting #{instance.id} (#{instance.tags['Name']},#{instance.private_ip_address}).\n"
+        @@logger.info {"Rebooting #{instance.id} (#{instance.tags['Name']},#{instance.private_ip_address})."}
         instance.reboot
       end
       i += 1
