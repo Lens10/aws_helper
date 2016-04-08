@@ -15,8 +15,10 @@ class AwsHelper
 
   def initialize
     @@client = AwsHelper::Client.new
-    @@logger = defined?(Rails.logger) || Logger.new(STDOUT)
-    @@logger.level = ENV['LOG_LEVEL'] ?  Logger.const_get(ENV['LOG_LEVEL'].upcase) : Logger::WARN
+    @@logger = Logger.new(STDOUT)
+    # FIXME: NoMethodError: undefined method `level=' for "method":String
+    # @@logger = defined?(Rails.logger) || Logger.new(STDOUT)
+    # @@logger.level = ENV['LOG_LEVEL'] ?  Logger.const_get(ENV['LOG_LEVEL'].upcase) : Logger::WARN
   end
 
   def self.get_self_instance_id
