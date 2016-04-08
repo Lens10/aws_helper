@@ -144,6 +144,17 @@ class AwsHelper
     return autoscale_group_name
   end
 
+  def set_instance_userdata(id, data)
+    instance = @@client.ec2.instances[id]
+    if instance.exists?
+      instance_stop_and_wait(instance)
+      instance.user_data = data
+    else
+      @@logger.warn "Instance #{id} not found; user data not set."
+      return 1
+    end
+  end
+
 private
   def get_running_worker_instances
     all_running_instances = @@client.ec2.instances.filter('instance-state-name', 'running')
@@ -189,7 +200,8 @@ private
       },
       ebs_optimized: false,
       associate_public_ip_address: false,
-      placement_tenancy: "default"
+      placement_tenancy: "default",
+      user_data: RAILS_ENV
     })
 
     return launch_configuration_name
