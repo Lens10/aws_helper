@@ -2,6 +2,8 @@
 
 A helper rubygem to manage DataTrue AWS instances.
 
+[ ![Codeship Status for Lens10/aws_helper](https://codeship.com/projects/835a34d0-df44-0133-4a4c-460ef9277ccd/status?branch=master)](https://codeship.com/projects/144983)
+
 # Usage
 
 Add to your `Gemfile`:
