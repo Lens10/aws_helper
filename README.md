@@ -80,3 +80,8 @@ None.
 `cloudwatch`: returns [AWS::CloudWatch::Client](http://www.rubydoc.info/gems/aws-sdk-v1/1.66.0/AWS/CloudWatch/Client).
 
 `ec2`: returns a [AWS::EC2::Client](http://www.rubydoc.info/gems/aws-sdk-v1/1.66.0/AWS/EC2/Client).
+
+# To do
+* Write tests
+* Remove hard-coded options
+* Make it generic, rename and publish in rubygem
