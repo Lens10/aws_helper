@@ -42,7 +42,7 @@ RAILS_ENV
 LOG_LEVEL
 ```
 
-The default RAILS_ENV is `development`.  The default LOG_LEVEL is `WARN` and it accepts any of the [Logger levers](http://ruby-doc.org/stdlib-2.2.2/libdoc/logger/rdoc/Logger.html).
+The default RAILS_ENV is `development`.  The default LOG_LEVEL is `WARN` and it accepts any of the [Logger levels](http://ruby-doc.org/stdlib-2.2.2/libdoc/logger/rdoc/Logger.html).
 
 
 # Full list of methods
