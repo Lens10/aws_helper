@@ -89,3 +89,4 @@ None.
 * Write tests
 * Remove hard-coded options
 * Make it generic, rename and publish in rubygem
+* Document AWS IAM permissions required
