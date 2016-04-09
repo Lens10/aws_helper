@@ -1,5 +1,6 @@
 class AwsHelper
   require 'aws_helper/client.rb'
+  require 'base64'
   require 'net/http'
   require 'logger'
 
@@ -155,7 +156,30 @@ class AwsHelper
     end
   end
 
+  def create_tagtrue_image(instance_id, version)
+    i = @@client.ec2.instances[instance_id]
+    ami = i.create_image(get_available_ami_name(version),
+                         description: 'Ubuntu 15.10')
+    ami.add_tag('version', value: version)
+    ami.add_tag('created_at', value: DateTime.now.iso8601)
+
+    return ami
+  end
+
 private
+  def get_available_ami_name(version)
+    i = 1
+    ami_name = "tagtrue_worker_v#{version}_#{i}"
+    ic = @@client.ec2.images.filter('name', ami_name)
+    until 0 == ic.count
+      i += 1
+      ami_name = "tagtrue_worker_v#{version}_#{i}"
+      ic = @@client.ec2.images.filter('name', ami_name)
+    end
+
+    return ami_name
+  end
+
   def get_running_worker_instances
     all_running_instances = @@client.ec2.instances.filter('instance-state-name', 'running')
     running_worker_instances = all_running_instances.with_tag('project', PROJECT_TAG).with_tag('environment', RAILS_ENV)
@@ -201,7 +225,7 @@ private
       ebs_optimized: false,
       associate_public_ip_address: false,
       placement_tenancy: "default",
-      user_data: RAILS_ENV
+      user_data: Base64.encode64(RAILS_ENV)
     })
 
     return launch_configuration_name

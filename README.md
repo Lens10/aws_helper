@@ -69,6 +69,8 @@ The default RAILS_ENV is `development`.  The default LOG_LEVEL is `WARN` and it 
 
 `set_instance_userdata(id, data)`: **stops** ec2 instance with instance_id `id` and writes `data` to the [instance user-data storage](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ec2-instance-metadata.html#instancedata-add-user-data). The instance user data can be accessed locally, e.g.: `curl http://169.254.169.254/latest/user-data`.
 
+`create_tagtrue_image(instance_id, version)`: **stops** instance `instance_id` and uses it as a base to create an AMI which is named and tagged after `version`.  Returns an instance of [AWS::EC2::Image](http://www.rubydoc.info/gems/aws-sdk-v1/1.66.0/AWS/EC2/Image) on success.
+
 ## AwsHelper::Client
 
 ### Class methods
