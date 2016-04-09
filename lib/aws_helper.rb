@@ -151,7 +151,7 @@ class AwsHelper
       instance.user_data = data
     else
       @@logger.warn "Instance #{id} not found; user data not set."
-      return 1
+      return false
     end
   end
 
