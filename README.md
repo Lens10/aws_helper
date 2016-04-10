@@ -71,6 +71,14 @@ The default RAILS_ENV is `development`.  The default LOG_LEVEL is `WARN` and it 
 
 `create_tagtrue_image(instance_id, version)`: **stops** instance `instance_id` and uses it as a base to create an AMI which is named and tagged after `version`.  Returns an instance of [AWS::EC2::Image](http://www.rubydoc.info/gems/aws-sdk-v1/1.66.0/AWS/EC2/Image) on success.
 
+`cleanup_autoscale_groups(keep_asg_name)`: deletes all auto scaling groups that match the naming convention, are tagged with `environment=RAILS_ENV` and do not match `keep_asg_name`.
+
+`cleanup_launch_configurations`: deletes all launch configurations that match the naming convention, are tagged with `environment=RAILS_ENV` and do not have an associated auto scaling group.
+
+`cleanup_instances`: terminates all stopped instances that match the naming convention and (are older than one month or are tagged with a version that matches an existing AMI id).  This is meant to be called before `cleanup_amis` so that instances are deleted as soon as their corresponding AMI has been built but the age criterion ensures that all are eventually deleted.
+
+`cleanup_amis`: unregisters all AMIs that are older than one month and are not associated with a launch configuration.
+
 ## AwsHelper::Client
 
 ### Class methods

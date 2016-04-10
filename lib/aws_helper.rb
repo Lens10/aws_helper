@@ -166,7 +166,63 @@ class AwsHelper
     return ami
   end
 
+  def cleanup_autoscale_groups(keep_asg_name)
+    delete_candidates = get_autoscale_delete_candidates(keep_asg_name)
+    # TODO: count how many instances are running and make sure keep_asg_name has
+    #       the same number
+    delete_candidates.each do |sg|
+      @@client.autoscale.update_auto_scaling_group({
+        auto_scaling_group_name: sg.auto_scaling_group_name,
+        min_size: 0,
+        desired_capacity: 0
+        }
+      )
+
+      @@client.autoscale.delete_auto_scaling_group({
+        auto_scaling_group_name: sg.auto_scaling_group_name,
+        force_delete: true
+        }
+      )
+    end
+  end
+
+  def cleanup_launch_configurations
+  end
+
+  def cleanup_instances
+  end
+
+  def cleanup_amis
+  end
+
 private
+  def get_autoscale_delete_candidates(keep_asg_name)
+    r = @@client.autoscale.describe_auto_scaling_groups
+    r.auto_scaling_groups.each do |sg|
+      if sg.auto_scaling_group_name.eql?(keep_asg_name)
+        @@logger.debug "Skipping auto scaling group #{sg.auto_scaling_group_name} (I was asked to keep it)"
+        next
+      end
+
+      if sg.auto_scaling_group_name.start_with?(CONFIG_NAME_BASE)
+        @@logger.debug "Marking auto scaling group #{sg.auto_scaling_group_name} for deletion (starts with #{CONFIG_NAME_BASE})"
+        delete_candidates << sg
+      else
+        @@logger.debug "Skipping auto scaling group #{sg.auto_scaling_group_name} (doesn't start with #{CONFIG_NAME_BASE})"
+      end
+    end
+
+    delete_candidates.delete_if do |sg|
+      match = sg.tags.select {|h| h.key == 'environment' && h.value == RAILS_ENV }
+      if 0 == match.count
+        @@logger.debug "Unmarking auto scaling group #{sg.auto_scaling_group_name} for deletion (missing tag 'environment=#{RAILS_ENV}')"
+        true
+      else
+        false
+      end
+    end
+  end
+
   def get_available_ami_name(version)
     i = 1
     ami_name = "tagtrue_worker_v#{version}_#{i}"
