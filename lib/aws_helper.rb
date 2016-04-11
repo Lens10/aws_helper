@@ -167,9 +167,27 @@ class AwsHelper
   end
 
   def cleanup_autoscale_groups(keep_asg_name)
-    delete_candidates = get_autoscale_delete_candidates(keep_asg_name)
-    # TODO: count how many instances are running and make sure keep_asg_name has
-    #       the same number
+    delete_candidates, desired_capacity = get_autoscale_delete_candidates(keep_asg_name)
+    @@logger.debug("Deleting #{delete_candidates.count} auto scaling groups with total capacity #{desired_capacity}")
+
+    keep_sg =  @@client.autoscale.describe_auto_scaling_groups({
+      auto_scaling_group_names: [keep_asg_name], max_records: 1
+      }).auto_scaling_groups[0]
+
+    if desired_capacity - keep_sg.desired_capacity > 0
+      if desired_capacity > keep_sg.max_size
+        @@logger.warn("Desired capacity for #{keep_asg_name} is #{desired_capacity} but maximum size is #{keep_sg.max_size}")
+        desired_capacity = keep_sg.max_size
+      else
+        @@logger.info("Setting desired capacity for #{keep_asg_name} to #{desired_capacity}")
+      end
+
+      @@client.autoscale.update_auto_scaling_group({
+        auto_scaling_group_name: keep_asg_name,
+        desired_capacity: desired_capacity
+        })
+    end
+
     delete_candidates.each do |sg|
       @@client.autoscale.update_auto_scaling_group({
         auto_scaling_group_name: sg.auto_scaling_group_name,
@@ -198,29 +216,36 @@ class AwsHelper
 private
   def get_autoscale_delete_candidates(keep_asg_name)
     r = @@client.autoscale.describe_auto_scaling_groups
+    delete_candidates = []
+    deleted_capacity = 0
+
     r.auto_scaling_groups.each do |sg|
       if sg.auto_scaling_group_name.eql?(keep_asg_name)
-        @@logger.debug "Skipping auto scaling group #{sg.auto_scaling_group_name} (I was asked to keep it)"
+        @@logger.debug "Skipping auto scaling group #{sg.auto_scaling_group_name} with capacity #{sg.desired_capacity} (I was asked to keep it)"
         next
       end
 
       if sg.auto_scaling_group_name.start_with?(CONFIG_NAME_BASE)
-        @@logger.debug "Marking auto scaling group #{sg.auto_scaling_group_name} for deletion (starts with #{CONFIG_NAME_BASE})"
+        @@logger.debug "Marking auto scaling group #{sg.auto_scaling_group_name} with capacity #{sg.desired_capacity} for deletion (starts with #{CONFIG_NAME_BASE})"
         delete_candidates << sg
+        deleted_capacity += sg.desired_capacity
       else
-        @@logger.debug "Skipping auto scaling group #{sg.auto_scaling_group_name} (doesn't start with #{CONFIG_NAME_BASE})"
+        @@logger.debug "Skipping auto scaling group #{sg.auto_scaling_group_name} with capacity #{sg.desired_capacity} (doesn't start with #{CONFIG_NAME_BASE})"
       end
     end
 
     delete_candidates.delete_if do |sg|
       match = sg.tags.select {|h| h.key == 'environment' && h.value == RAILS_ENV }
       if 0 == match.count
-        @@logger.debug "Unmarking auto scaling group #{sg.auto_scaling_group_name} for deletion (missing tag 'environment=#{RAILS_ENV}')"
+        @@logger.debug "Unmarking auto scaling group #{sg.auto_scaling_group_name} with capacity #{sg.desired_capacity} for deletion (missing tag 'environment=#{RAILS_ENV}')"
+        deleted_capacity -= sg.desired_capacity
         true
       else
         false
       end
     end
+
+    return delete_candidates, deleted_capacity
   end
 
   def get_available_ami_name(version)
