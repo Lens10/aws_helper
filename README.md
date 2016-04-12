@@ -93,8 +93,52 @@ None.
 
 `ec2`: returns a [AWS::EC2::Client](http://www.rubydoc.info/gems/aws-sdk-v1/1.66.0/AWS/EC2/Client).
 
+# AWS IAM Policy
+
+This is the full set of permissions needed to operate all methods of this gem.  Start with this and remove what you don't need.
+
+```json
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Sid": "Stmt1460173333000",
+            "Effect": "Allow",
+            "Action": [
+                "ec2:CreateTags",
+                "ec2:CreateImage",
+                "ec2:DeregisterImage",
+                "ec2:DescribeImages",
+                "ec2:DescribeInstanceStatus",
+                "ec2:DescribeInstances",
+                "ec2:DescribeTags",
+                "ec2:StopInstances"
+            ],
+            "Resource": [ "*" ]
+        },
+        {
+            "Sid": "Stmt1460173476000",
+            "Effect": "Allow",
+            "Action": [
+                "autoscaling:CreateAutoScalingGroup",
+                "autoscaling:CreateLaunchConfiguration",
+                "autoscaling:CreateOrUpdateTags",
+                "autoscaling:DeleteAutoScalingGroup",
+                "autoscaling:DeleteLaunchConfiguration",
+                "autoscaling:DescribeAutoScalingGroups",
+                "autoscaling:DescribeLaunchConfigurations",
+                "autoscaling:DescribeTags",
+                "autoscaling:PutScalingPolicy",
+                "autoscaling:UpdateAutoScalingGroup",
+                "cloudwatch:PutMetricAlarm"
+            ],
+            "Resource": [ "*" ]
+        }
+    ]
+}
+```
+
 # To do
 * Write tests
 * Remove hard-coded options
 * Make it generic, rename and publish in rubygem
-* Document AWS IAM permissions required
