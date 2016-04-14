@@ -83,16 +83,16 @@ class AwsHelper
 
   def add_instances(num)
     resp = @@client.autoscale.describe_auto_scaling_groups()
-    resource_name = ""
+    asg_name = ""
     desired_capacity = 0
 
-    resp.auto_scaling_groups.each do |group|
-      resource_name = group.launch_configuration_name
-      desired_capacity = group.desired_capacity
-      break if resource_name.start_with?(CONFIG_NAME_BASE)
+    resp.auto_scaling_groups.each do |asg|
+      asg_name = asg.auto_scaling_group_name
+      desired_capacity = asg.desired_capacity
+      break if asg_name.start_with?(CONFIG_NAME_BASE)
     end
 
-    if resource_name.start_with?(CONFIG_NAME_BASE)
+    if asg_name.start_with?(CONFIG_NAME_BASE)
       if desired_capacity == WORKER_INSTANCE_LIMIT
         @@logger.error "Limit of #{WORKER_INSTANCE_LIMIT} reached; not scaling-up."
         return WORKER_INSTANCE_LIMIT
@@ -104,10 +104,10 @@ class AwsHelper
         desired_capacity = WORKER_INSTANCE_LIMIT
       end
 
-      @@logger.info "Setting desired capacity to #{desired_capacity} instances."
+      @@logger.info "Setting desired capacity of #{asg_name} to #{desired_capacity} instances."
 
       @@client.autoscale.set_desired_capacity(
-        auto_scaling_group_name: resource_name,
+        auto_scaling_group_name: asg_name,
         desired_capacity: desired_capacity
       )
 
