@@ -14,8 +14,8 @@ class AwsHelper
   REBOOT_TIMEOUT = 60 # seconds
   INSTANCE_STARTUP_TIME = 240 # seconds - measured at 220s so add a bit of room.
 
-  def initialize
-    @@client = AwsHelper::Client.new
+  def initialize(options={})
+    @@client = AwsHelper::Client.new(options)
     @@logger = Logger.new(STDOUT)
     # FIXME: NoMethodError: undefined method `level=' for "method":String
     # @@logger = defined?(Rails.logger) || Logger.new(STDOUT)
