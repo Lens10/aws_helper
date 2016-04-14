@@ -50,6 +50,7 @@ class AwsHelper
       @@logger.info {"Waiting for [#{wait_instance_count}] instance(s) to reboot before rebooting the remainder without delay."}
     end
 
+# FIXME: need to filter-out the instance that was just started
     i = 0
     target_instances.each do |instance|
       if wait_instance_count > i
@@ -204,6 +205,11 @@ class AwsHelper
     end
   end
 
+  def get_running_worker_instances
+    all_running_instances = @@client.ec2.instances.filter('instance-state-name', 'running')
+    running_worker_instances = all_running_instances.with_tag('project', PROJECT_TAG).with_tag('environment', RAILS_ENV)
+  end
+
   def cleanup_launch_configurations
   end
 
@@ -259,11 +265,6 @@ private
     end
 
     return ami_name
-  end
-
-  def get_running_worker_instances
-    all_running_instances = @@client.ec2.instances.filter('instance-state-name', 'running')
-    running_worker_instances = all_running_instances.with_tag('project', PROJECT_TAG).with_tag('environment', RAILS_ENV)
   end
 
   # v2 of aws-sdk has built-in wait states but v1 doesn't :(
