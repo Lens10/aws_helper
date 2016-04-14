@@ -130,6 +130,7 @@ This is the full set of permissions needed to operate all methods of this gem.  
                 "autoscaling:DescribeTags",
                 "autoscaling:PutScalingPolicy",
                 "autoscaling:UpdateAutoScalingGroup",
+                "autoscaling:SetDesiredCapacity"
                 "cloudwatch:PutMetricAlarm"
             ],
             "Resource": [ "*" ]
