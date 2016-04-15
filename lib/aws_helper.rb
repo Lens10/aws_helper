@@ -73,7 +73,7 @@ class AwsHelper
   end
 
   def get_leader_instance_id
-    instances = get_running_worker_instances
+    instances, _ = get_running_worker_instances
     instances.map(&:id).sort[0]
   end
 
