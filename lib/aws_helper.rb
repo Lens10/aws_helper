@@ -26,14 +26,14 @@ class AwsHelper
 
   def reboot_instances
     target_instances, target_names = get_running_worker_instances
-    wait_instance_count = (target_instances.count*REBOOT_WAIT_COUNT_PCT).to_i
+    wait_instance_count = (target_names.count*REBOOT_WAIT_COUNT_PCT).ceil
 
-    @@logger.info {"Found [#{target_instances.count}] [#{RAILS_ENV}] instance(s) of [#{PROJECT_TAG}] to reboot."}
+    @@logger.info {"Found [#{target_names.count}] [#{RAILS_ENV}] instance(s) of [#{PROJECT_TAG}] to reboot."}
 
-    if target_instances.count == 0
+    if target_names.count == 0
       @@logger.warn {"No target instances found."}
       return 1, 0
-    elsif target_instances.count == 1
+    elsif target_names.count == 1
       add_instances(1)
       @@logger.debug {"Added one new instance. Sleeping for #{INSTANCE_STARTUP_TIME}s before rebooting existing instance."}
       verbose_sleep(INSTANCE_STARTUP_TIME)
