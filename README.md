@@ -63,7 +63,9 @@ The default RAILS_ENV is `development`.  The default LOG_LEVEL is `WARN` and it 
 
 `get_leader_instance_id`: returns the instance ID of the leader in a group of instances tagged with `project=tagtrue` and `environment=RAILS_ENV`.  The algorithm simply consists of sorting all instances by ID and returning the first one.
 
-`add_instances(n)`: adds n instances to the current autoscale group.  The current autoscale group is the first one that matches the name filter.  Autoscale groups should sort naturally (see `create_autoscale_group` below) and the first match should always be the latest one to be created.
+`get_running_worker_instances`: finds all running instances with tags matching `environment=ENV['RAILS_ENV']` and `project=AwsHelper::PROJECT_TAG`.  Returns an `AWS::EC2::InstanceCollection` and an `Array` of instance IDs.
+
+`add_instances(n)`: adds n instances to the current autoscale group.  The current autoscale group is the first one that matches the name filter.  Autoscale groups should sort naturally (see `create_autoscale_group` below) and the first match should always be the latest one to be created.  Returns the autoscale group's new desired capacity.
 
 `create_autoscale_group(ami_id)`: creates a new auto scaling group configuration using `ami_id` to create its required launch configuration.  The following options are currently hard-coded: `key_name: 'id_lens10'`, `security_groups: ['sg-57142f2e']`, `instance_type: 't2.large'` (there are others, see `configure_autoscale_policies` in `lib/aws_helper.rb`).  It returns the name of the newly created auto scaling group in this format: `"#{CONFIG_NAME_BASE}#{Date.today.iso8601}_#{i}"`.
 

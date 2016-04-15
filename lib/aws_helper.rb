@@ -34,7 +34,7 @@ class AwsHelper
   end
 
   def reboot_instances
-    target_instances = get_running_worker_instances
+    target_instances, target_names = get_running_worker_instances
     wait_instance_count = (target_instances.count*REBOOT_WAIT_COUNT_PCT).to_i
 
     @@logger.info {"Found [#{target_instances.count}] [#{RAILS_ENV}] instance(s) of [#{PROJECT_TAG}] to reboot."}
@@ -50,9 +50,13 @@ class AwsHelper
       @@logger.info {"Waiting for [#{wait_instance_count}] instance(s) to reboot before rebooting the remainder without delay."}
     end
 
-# FIXME: need to filter-out the instance that was just started
     i = 0
     target_instances.each do |instance|
+      unless target_names.include?(instance.id)
+        @@logger.info {"Skipped young #{instance.id} (#{instance.tags['Name']},#{instance.private_ip_address})."}
+        next
+      end
+
       if wait_instance_count > i
         @@logger.info {"Stopping #{instance.id} (#{instance.tags['Name']},#{instance.private_ip_address})."}
         if instance_stop_and_wait(instance, REBOOT_TIMEOUT)
@@ -208,6 +212,9 @@ class AwsHelper
   def get_running_worker_instances
     all_running_instances = @@client.ec2.instances.filter('instance-state-name', 'running')
     running_worker_instances = all_running_instances.with_tag('project', PROJECT_TAG).with_tag('environment', RAILS_ENV)
+    instance_names = running_worker_instances.map(&:id)
+
+    return running_worker_instances, instance_names
   end
 
   def cleanup_launch_configurations
