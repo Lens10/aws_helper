@@ -90,7 +90,7 @@ class AwsHelper
 
     if asg_name.start_with?(CONFIG_NAME_BASE)
       if desired_capacity == WORKER_INSTANCE_LIMIT
-        @@logger.error "Limit of #{WORKER_INSTANCE_LIMIT} reached; not scaling-up."
+        @@logger.error "Limit of #{WORKER_INSTANCE_LIMIT} instances reached; not scaling-up."
         return WORKER_INSTANCE_LIMIT
       end
 
