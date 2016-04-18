@@ -228,7 +228,7 @@ class AwsHelper
           next
         end
 
-        if (Time.now - lc.created_time).to_i/86400 > AwsHelper::AWS_OBJECT_CLEANUP_AGE
+        if (Time.now - lc.created_time).to_i/86400 > AWS_OBJECT_CLEANUP_AGE
           delete_list << lc.launch_configuration_name
           @@logger.debug {"cleanup_launch_configurations Marking #{lc.launch_configuration_name} for deletion."}
         else
