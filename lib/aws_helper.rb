@@ -175,14 +175,13 @@ class AwsHelper
       if desired_capacity > keep_sg.max_size
         @@logger.warn("cleanup_autoscale_groups Desired capacity for #{keep_asg_name} is #{desired_capacity} but maximum size is #{keep_sg.max_size}")
         desired_capacity = keep_sg.max_size
-      else
-        @@logger.info("cleanup_autoscale_groups Setting desired capacity for #{keep_asg_name} to #{desired_capacity}")
       end
 
       @@client.autoscale.update_auto_scaling_group({
         auto_scaling_group_name: keep_asg_name,
         desired_capacity: desired_capacity
         })
+      @@logger.info("cleanup_autoscale_groups Desired capacity for #{keep_asg_name} set to #{desired_capacity}")
     end
 
     # Wait for new instances to start-up in keep group
