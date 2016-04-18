@@ -90,7 +90,7 @@ class AwsHelper
 
     if asg_name.start_with?(CONFIG_NAME_BASE)
       if desired_capacity == WORKER_INSTANCE_LIMIT
-        @@logger.error "Limit of #{WORKER_INSTANCE_LIMIT} reached; not scaling-up."
+        @@logger.error "Limit of #{WORKER_INSTANCE_LIMIT} instances reached; not scaling-up."
         return WORKER_INSTANCE_LIMIT
       end
 
@@ -170,6 +170,7 @@ class AwsHelper
       auto_scaling_group_names: [keep_asg_name], max_records: 1
       }).auto_scaling_groups[0]
 
+    # Keep group must have the capacity we're about to remove
     if desired_capacity - keep_sg.desired_capacity > 0
       if desired_capacity > keep_sg.max_size
         @@logger.warn("Desired capacity for #{keep_asg_name} is #{desired_capacity} but maximum size is #{keep_sg.max_size}")
@@ -184,6 +185,10 @@ class AwsHelper
         })
     end
 
+    # Wait for new instances to start-up in keep group
+    do_cleanup_autoscale_capacity_wait(keep_asg_name)
+
+    # Avoid the existing instances to detach and keep running
     delete_candidates.each do |sg|
       @@client.autoscale.update_auto_scaling_group({
         auto_scaling_group_name: sg.auto_scaling_group_name,
@@ -209,15 +214,124 @@ class AwsHelper
   end
 
   def cleanup_launch_configurations
+    delete_list = []
+    busy_lc = get_busy_launch_configurations
+    next_token = :start
+    while next_token
+      options = next_token.eql?(:start) ? {} : { next_token: next_token}
+      resp = @@client.autoscale.describe_launch_configurations(options)
+      configurations = resp.launch_configurations
+
+      configurations.each do |lc|
+        if busy_lc.include?(lc.launch_configuration_name)
+          @@logger.debug {"cleanup_launch_configurations Skipped #{lc.launch_configuration_name} (in use)."}
+          next
+        end
+
+        if (Time.now - lc.created_time).to_i/86400 > AWS_OBJECT_CLEANUP_AGE
+          delete_list << lc.launch_configuration_name
+          @@logger.debug {"cleanup_launch_configurations Marked #{lc.launch_configuration_name} for deletion."}
+        else
+          @@logger.debug {"cleanup_launch_configurations Skipped #{lc.launch_configuration_name} (too young)."}
+        end
+      end
+
+      next_token = resp[:next_token]
+    end
+
+    delete_list.each do |lc_name|
+      @@client.autoscale.delete_launch_configuration({ launch_configuration_name: lc_name })
+      @@logger.info {"cleanup_launch_configurations Deleted #{lc_name}."}
+    end
   end
 
   def cleanup_instances
+    delete_candidates = @@client.ec2.instances.filter('instance-state-name', 'stopped').with_tag('project', PROJECT_TAG)
+    delete_candidates.select{|i| (Time.now - i.launch_time).to_i/86400 > AWS_OBJECT_CLEANUP_AGE}.each do |i|
+      i.terminate
+      @@logger.info {"cleanup_instances Deleted instance #{i.instance_id} with launch time #{i.launch_time}"}
+    end
   end
 
   def cleanup_amis
+    busy_ami = get_busy_amis
+    delete_candidates = @@client.real_ec2.describe_images({ owners: ['self', '453793470413']}).images_set
+    delete_candidates.select{|ami| (Time.now - Time.parse(ami.creation_date)).to_i/86400 > AWS_OBJECT_CLEANUP_AGE}.each do |ami|
+      if busy_ami.include?(ami.image_id)
+        @@logger.debug {"cleanup_amis Skipped #{ami.image_id} (in use)."}
+        next
+      end
+
+      if ami.name.start_with?(AMI_NAME_BASE)
+        ami.deregister
+        @@logger.info {"cleanup_amis Deleted #{ami.name} #{ami.image_id} #{ami.creation_date}."}
+      else
+        @@logger.debug {"cleanup_amis Skipped #{ami.name} #{ami.image_id} #{ami.creation_date} (name didn't match)."}
+      end
+    end
   end
 
 private
+  def get_busy_amis
+    busy_ami = []
+
+    next_token = :start
+    while next_token
+      options = next_token.eql?(:start) ? {} : { next_token: next_token}
+      resp =  @@client.autoscale.describe_launch_configurations(options)
+      busy_ami << resp.launch_configurations.map(&:image_id)
+      next_token = resp[:next_token]
+    end
+
+    return busy_ami.flatten
+  end
+
+  def get_busy_launch_configurations
+    busy_lc = []
+
+    next_token = :start
+    while next_token
+      options = next_token.eql?(:start) ? {} : { next_token: next_token}
+      asg =  @@client.autoscale.describe_auto_scaling_groups(options)
+      busy_lc << asg.auto_scaling_groups.map(&:launch_configuration_name)
+      next_token = asg[:next_token]
+    end
+
+    return busy_lc.flatten
+  end
+
+  def do_cleanup_autoscale_capacity_wait(keep_asg_name)
+    keep_sg =  @@client.autoscale.describe_auto_scaling_groups({
+      auto_scaling_group_names: [keep_asg_name], max_records: 1
+      }).auto_scaling_groups[0]
+    t = 0
+
+    while keep_sg.instances.count < keep_sg.desired_capacity && t < AwsHelper::INSTANCE_STARTUP_TIME
+      @@logger.info {"cleanup_autoscale_groups waited #{t}/#{AwsHelper::INSTANCE_STARTUP_TIME}s for #{keep_asg_name} instance count of #{keep_sg.instances.count} to reach #{keep_sg.desired_capacity}."}
+      sleep 5
+      t += 5
+      keep_sg =  @@client.autoscale.describe_auto_scaling_groups({
+        auto_scaling_group_names: [keep_asg_name], max_records: 1
+        }).auto_scaling_groups[0]
+    end
+
+    while t < AwsHelper::INSTANCE_STARTUP_TIME
+      @@logger.info {"cleanup_autoscale_groups waited #{t}/#{AwsHelper::INSTANCE_STARTUP_TIME}s for instances to be InService."}
+      sleep 5
+      t += 5
+      keep_sg =  @@client.autoscale.describe_auto_scaling_groups({
+        auto_scaling_group_names: [keep_asg_name], max_records: 1
+        }).auto_scaling_groups[0]
+
+      keep_sg.instances.each do |i|
+        @@logger.debug {"cleanup_autoscale_groups Instance #{i.instance_id} State: #{i.lifecycle_state} Health: #{i.health_status}."}
+        next if !'InService'.eql?(i.lifecycle_state)
+      end
+
+      break
+    end
+  end
+
   def get_autoscale_delete_candidates(keep_asg_name)
     r = @@client.autoscale.describe_auto_scaling_groups
     delete_candidates = []
@@ -254,11 +368,11 @@ private
 
   def get_available_ami_name(version)
     i = 1
-    ami_name = "tagtrue_worker_v#{version}_#{i}"
+    ami_name = "#{AMI_NAME_BASE}#{version}_#{i}"
     ic = @@client.ec2.images.filter('name', ami_name)
     until 0 == ic.count
       i += 1
-      ami_name = "tagtrue_worker_v#{version}_#{i}"
+      ami_name = "#{AMI_NAME_BASE}#{version}_#{i}"
       ic = @@client.ec2.images.filter('name', ami_name)
     end
 

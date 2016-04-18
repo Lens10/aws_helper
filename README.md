@@ -75,11 +75,11 @@ The default RAILS_ENV is `development`.  The default LOG_LEVEL is `WARN` and it 
 
 `cleanup_autoscale_groups(keep_asg_name)`: deletes all auto scaling groups that match the naming convention, are tagged with `environment=RAILS_ENV` and do not match `keep_asg_name`.
 
-`(TODO) cleanup_launch_configurations`: deletes all launch configurations that match the naming convention, are tagged with `environment=RAILS_ENV` and do not have an associated auto scaling group.
+`cleanup_launch_configurations`: deletes all launch configurations older than AWS_OBJECT_CLEANUP_AGE and not in use (i.e. don't have an associated auto scaling group).
 
-`(TODO) cleanup_instances`: terminates all stopped instances that match the naming convention and (are older than one month or are tagged with a version that matches an existing AMI id).  This is meant to be called before `cleanup_amis` so that instances are deleted as soon as their corresponding AMI has been built but the age criterion ensures that all are eventually deleted.
+`cleanup_instances`: terminates all stopped instances older than AWS_OBJECT_CLEANUP_AGE that are tagged with `project=PROJECT_TAG`.  The method doesn't check the instance name because it's not responsible for naming instances and, hence, doesn't know what the naming standard is.
 
-`(TODO) cleanup_amis`: unregisters all AMIs that are older than one month and are not associated with a launch configuration.
+`cleanup_amis`: unregisters all AMIs that are older than AWS_OBJECT_CLEANUP_AGE, are not associated with a launch configuration and match the naming convention.
 
 ## AwsHelper::Client
 
