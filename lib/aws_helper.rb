@@ -224,15 +224,15 @@ class AwsHelper
 
       configurations.each do |lc|
         if busy_lc.include?(lc.launch_configuration_name)
-          @@logger.debug {"cleanup_launch_configurations Skipping #{lc.launch_configuration_name} (in use)."}
+          @@logger.debug {"cleanup_launch_configurations Skipped #{lc.launch_configuration_name} (in use)."}
           next
         end
 
         if (Time.now - lc.created_time).to_i/86400 > AWS_OBJECT_CLEANUP_AGE
           delete_list << lc.launch_configuration_name
-          @@logger.debug {"cleanup_launch_configurations Marking #{lc.launch_configuration_name} for deletion."}
+          @@logger.debug {"cleanup_launch_configurations Marked #{lc.launch_configuration_name} for deletion."}
         else
-          @@logger.debug {"cleanup_launch_configurations Skipping #{lc.launch_configuration_name} (too young)."}
+          @@logger.debug {"cleanup_launch_configurations Skipped #{lc.launch_configuration_name} (too young)."}
         end
       end
 
@@ -254,9 +254,38 @@ class AwsHelper
   end
 
   def cleanup_amis
+    busy_ami = get_busy_amis
+    delete_candidates = @@client.real_ec2.describe_images({ owners: ['self', '453793470413']}).images_set
+    delete_candidates.select{|ami| (Time.now - Time.parse(ami.creation_date)).to_i/86400 > AWS_OBJECT_CLEANUP_AGE}.each do |ami|
+      if busy_ami.include?(ami.image_id)
+        @@logger.debug {"cleanup_amis Skipped #{ami.image_id} (in use)."}
+        next
+      end
+
+      if ami.name.start_with?(AMI_NAME_BASE)
+        ami.deregister
+        @@logger.info {"cleanup_amis Deleted #{ami.name} #{ami.image_id} #{ami.creation_date}."}
+      else
+        @@logger.debug {"cleanup_amis Skipped #{ami.name} #{ami.image_id} #{ami.creation_date} (name didn't match)."}
+      end
+    end
   end
 
 private
+  def get_busy_amis
+    busy_ami = []
+
+    next_token = :start
+    while next_token
+      options = next_token.eql?(:start) ? {} : { next_token: next_token}
+      resp =  @@client.autoscale.describe_launch_configurations(options)
+      busy_ami << resp.launch_configurations.map(&:image_id)
+      next_token = resp[:next_token]
+    end
+
+    return busy_ami.flatten
+  end
+
   def get_busy_launch_configurations
     busy_lc = []
 
@@ -339,11 +368,11 @@ private
 
   def get_available_ami_name(version)
     i = 1
-    ami_name = "tagtrue_worker_v#{version}_#{i}"
+    ami_name = "#{AMI_NAME_BASE}#{version}_#{i}"
     ic = @@client.ec2.images.filter('name', ami_name)
     until 0 == ic.count
       i += 1
-      ami_name = "tagtrue_worker_v#{version}_#{i}"
+      ami_name = "#{AMI_NAME_BASE}#{version}_#{i}"
       ic = @@client.ec2.images.filter('name', ami_name)
     end
 

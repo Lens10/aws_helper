@@ -79,7 +79,7 @@ The default RAILS_ENV is `development`.  The default LOG_LEVEL is `WARN` and it 
 
 `cleanup_instances`: terminates all stopped instances older than AWS_OBJECT_CLEANUP_AGE that are tagged with `project=PROJECT_TAG`.  The method doesn't check the instance name because it's not responsible for naming instances and, hence, doesn't know what the naming standard is.
 
-`(TODO) cleanup_amis`: unregisters all AMIs that are older than one month and are not associated with a launch configuration.
+`cleanup_amis`: unregisters all AMIs that are older than AWS_OBJECT_CLEANUP_AGE, are not associated with a launch configuration and match the naming convention.
 
 ## AwsHelper::Client
 

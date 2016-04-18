@@ -2,7 +2,7 @@ class AwsHelper::Client
   require 'aws-sdk-v1'
   require 'net/http'
 
-  attr_reader :autoscale, :cloudwatch, :ec2
+  attr_reader :autoscale, :cloudwatch, :ec2, :real_ec2
 
   def initialize(h = {})
     @@aws_options = {
@@ -11,12 +11,17 @@ class AwsHelper::Client
       region:             h[:region]            || ENV['AWS_REGION'] || 'us-east-1'
     }
 
+    @real_ec2    = get_real_ec2_client
     @ec2         = get_ec2_client
     @autoscale   = get_autoscale_client
     @cloudwatch  = get_cloudwatch_client
   end
 
 private
+  def get_real_ec2_client
+    AWS::EC2::Client.new(@@aws_options)
+  end
+
   def get_ec2_client
     AWS::EC2.new(@@aws_options)
   end
