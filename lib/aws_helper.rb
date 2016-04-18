@@ -246,6 +246,11 @@ class AwsHelper
   end
 
   def cleanup_instances
+    delete_candidates = @@client.ec2.instances.filter('instance-state-name', 'stopped').with_tag('project', PROJECT_TAG)
+    delete_candidates.select{|i| (Time.now - i.launch_time).to_i/86400 > AWS_OBJECT_CLEANUP_AGE}.each do |i|
+      i.terminate
+      @@logger.info {"cleanup_instances Deleted instance #{i.instance_id} with launch time #{i.launch_time}"}
+    end
   end
 
   def cleanup_amis
