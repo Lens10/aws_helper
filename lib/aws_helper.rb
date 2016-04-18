@@ -214,6 +214,35 @@ class AwsHelper
   end
 
   def cleanup_launch_configurations
+    delete_list = []
+    busy_lc = get_busy_launch_configurations
+    next_token = :start
+    while next_token
+      options = next_token.eql?(:start) ? {} : { next_token: next_token}
+      resp = @@client.autoscale.describe_launch_configurations(options)
+      configurations = resp.launch_configurations
+
+      configurations.each do |lc|
+        if busy_lc.include?(lc.launch_configuration_name)
+          @@logger.debug {"cleanup_launch_configurations Skipping #{lc.launch_configuration_name} (in use)."}
+          next
+        end
+
+        if (Time.now - lc.created_time).to_i/86400 > AwsHelper::AWS_OBJECT_CLEANUP_AGE
+          delete_list << lc.launch_configuration_name
+          @@logger.debug {"cleanup_launch_configurations Marking #{lc.launch_configuration_name} for deletion."}
+        else
+          @@logger.debug {"cleanup_launch_configurations Skipping #{lc.launch_configuration_name} (too young)."}
+        end
+      end
+
+      next_token = resp[:next_token]
+    end
+
+    delete_list.each do |lc_name|
+      @@client.autoscale.delete_launch_configuration({ launch_configuration_name: lc_name })
+      @@logger.info {"cleanup_launch_configurations Deleted #{lc_name}."}
+    end
   end
 
   def cleanup_instances
@@ -223,6 +252,20 @@ class AwsHelper
   end
 
 private
+  def get_busy_launch_configurations
+    busy_lc = []
+
+    next_token = :start
+    while next_token
+      options = next_token.eql?(:start) ? {} : { next_token: next_token}
+      asg =  @@client.autoscale.describe_auto_scaling_groups(options)
+      busy_lc << asg.auto_scaling_groups.map(&:launch_configuration_name)
+      next_token = asg[:next_token]
+    end
+
+    return busy_lc.flatten
+  end
+
   def do_cleanup_autoscale_capacity_wait(keep_asg_name)
     keep_sg =  @@client.autoscale.describe_auto_scaling_groups({
       auto_scaling_group_names: [keep_asg_name], max_records: 1
