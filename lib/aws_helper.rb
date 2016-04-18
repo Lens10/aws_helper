@@ -170,6 +170,7 @@ class AwsHelper
       auto_scaling_group_names: [keep_asg_name], max_records: 1
       }).auto_scaling_groups[0]
 
+    # Keep group must have the capacity we're about to remove
     if desired_capacity - keep_sg.desired_capacity > 0
       if desired_capacity > keep_sg.max_size
         @@logger.warn("Desired capacity for #{keep_asg_name} is #{desired_capacity} but maximum size is #{keep_sg.max_size}")
@@ -184,6 +185,10 @@ class AwsHelper
         })
     end
 
+    # Wait for new instances to start-up in keep group
+    do_cleanup_autoscale_capacity_wait(keep_asg_name)
+
+    # Avoid the existing instances to detach and keep running
     delete_candidates.each do |sg|
       @@client.autoscale.update_auto_scaling_group({
         auto_scaling_group_name: sg.auto_scaling_group_name,
@@ -218,6 +223,38 @@ class AwsHelper
   end
 
 private
+  def do_cleanup_autoscale_capacity_wait(keep_asg_name)
+    keep_sg =  @@client.autoscale.describe_auto_scaling_groups({
+      auto_scaling_group_names: [keep_asg_name], max_records: 1
+      }).auto_scaling_groups[0]
+    t = 0
+
+    while keep_sg.instances.count < keep_sg.desired_capacity && t < AwsHelper::INSTANCE_STARTUP_TIME
+      @@logger.info {"cleanup_autoscale_groups waited #{t}/#{AwsHelper::INSTANCE_STARTUP_TIME}s for #{keep_asg_name} instance count of #{keep_sg.instances.count} to reach #{keep_sg.desired_capacity}."}
+      sleep 5
+      t += 5
+      keep_sg =  @@client.autoscale.describe_auto_scaling_groups({
+        auto_scaling_group_names: [keep_asg_name], max_records: 1
+        }).auto_scaling_groups[0]
+    end
+
+    while t < AwsHelper::INSTANCE_STARTUP_TIME
+      @@logger.info {"cleanup_autoscale_groups waited #{t}/#{AwsHelper::INSTANCE_STARTUP_TIME}s for instances to be InService."}
+      sleep 5
+      t += 5
+      keep_sg =  @@client.autoscale.describe_auto_scaling_groups({
+        auto_scaling_group_names: [keep_asg_name], max_records: 1
+        }).auto_scaling_groups[0]
+
+      keep_sg.instances.each do |i|
+        @@logger.debug {"cleanup_autoscale_groups Instance #{i.instance_id} State: #{i.lifecycle_state} Health: #{i.health_status}."}
+        next if !'InService'.eql?(i.lifecycle_state)
+      end
+
+      break
+    end
+  end
+
   def get_autoscale_delete_candidates(keep_asg_name)
     r = @@client.autoscale.describe_auto_scaling_groups
     delete_candidates = []
