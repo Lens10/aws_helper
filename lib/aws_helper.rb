@@ -164,7 +164,7 @@ class AwsHelper
 
   def cleanup_autoscale_groups(keep_asg_name)
     delete_candidates, desired_capacity = get_autoscale_delete_candidates(keep_asg_name)
-    @@logger.debug("Deleting #{delete_candidates.count} auto scaling groups with total capacity #{desired_capacity}")
+    @@logger.debug("cleanup_autoscale_groups Selected #{delete_candidates.count} auto scaling groups with total capacity #{desired_capacity}")
 
     keep_sg =  @@client.autoscale.describe_auto_scaling_groups({
       auto_scaling_group_names: [keep_asg_name], max_records: 1
@@ -173,10 +173,10 @@ class AwsHelper
     # Keep group must have the capacity we're about to remove
     if desired_capacity - keep_sg.desired_capacity > 0
       if desired_capacity > keep_sg.max_size
-        @@logger.warn("Desired capacity for #{keep_asg_name} is #{desired_capacity} but maximum size is #{keep_sg.max_size}")
+        @@logger.warn("cleanup_autoscale_groups Desired capacity for #{keep_asg_name} is #{desired_capacity} but maximum size is #{keep_sg.max_size}")
         desired_capacity = keep_sg.max_size
       else
-        @@logger.info("Setting desired capacity for #{keep_asg_name} to #{desired_capacity}")
+        @@logger.info("cleanup_autoscale_groups Setting desired capacity for #{keep_asg_name} to #{desired_capacity}")
       end
 
       @@client.autoscale.update_auto_scaling_group({
@@ -193,15 +193,22 @@ class AwsHelper
       @@client.autoscale.update_auto_scaling_group({
         auto_scaling_group_name: sg.auto_scaling_group_name,
         min_size: 0,
+        max_size: 0,
         desired_capacity: 0
         }
       )
 
-      @@client.autoscale.delete_auto_scaling_group({
-        auto_scaling_group_name: sg.auto_scaling_group_name,
-        force_delete: true
-        }
-      )
+      if (Time.now - sg.created_time).to_i/86400 <= AWS_OBJECT_CLEANUP_AGE
+        @@logger.debug {"cleanup_autoscale_groups Skipped #{sg.auto_scaling_group_name} (too young)."}
+        next
+      else
+        @@client.autoscale.delete_auto_scaling_group({
+          auto_scaling_group_name: sg.auto_scaling_group_name,
+          force_delete: true
+          }
+        )
+        @@logger.info {"cleanup_autoscale_groups Deleted #{sg.auto_scaling_group_name}."}
+      end
     end
   end
 

@@ -73,7 +73,7 @@ The default RAILS_ENV is `development`.  The default LOG_LEVEL is `WARN` and it 
 
 `create_tagtrue_image(instance_id, version)`: **stops** instance `instance_id` and uses it as a base to create an AMI which is named and tagged after `version`.  Returns an instance of [AWS::EC2::Image](http://www.rubydoc.info/gems/aws-sdk-v1/1.66.0/AWS/EC2/Image) on success.
 
-`cleanup_autoscale_groups(keep_asg_name)`: deletes all auto scaling groups that match the naming convention, are tagged with `environment=RAILS_ENV` and do not match `keep_asg_name`.
+`cleanup_autoscale_groups(keep_asg_name)`: deletes all auto scaling groups that are older than AWS_OBJECT_CLEANUP_AGE, match the naming convention, are tagged with `environment=RAILS_ENV` and do not match `keep_asg_name`.  If the auto scaling group is not older than AWS_OBJECT_CLEANUP_AGE its `min_size`, `max_size` and `desired_capacity` are set to zero.
 
 `cleanup_launch_configurations`: deletes all launch configurations older than AWS_OBJECT_CLEANUP_AGE and not in use (i.e. don't have an associated auto scaling group).
 
