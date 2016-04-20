@@ -78,39 +78,32 @@ class AwsHelper
   end
 
   def add_instances(num)
-    resp = @@client.autoscale.describe_auto_scaling_groups()
-    asg_name = ""
-    desired_capacity = 0
+    asg = get_active_auto_scaling_group
 
-    resp.auto_scaling_groups.each do |asg|
-      asg_name = asg.auto_scaling_group_name
-      desired_capacity = asg.desired_capacity
-      break if asg_name.start_with?(CONFIG_NAME_BASE)
-    end
-
-    if asg_name.start_with?(CONFIG_NAME_BASE)
-      if desired_capacity == WORKER_INSTANCE_LIMIT
-        @@logger.error "Limit of #{WORKER_INSTANCE_LIMIT} instances reached; not scaling-up."
-        return WORKER_INSTANCE_LIMIT
-      end
-
-      desired_capacity += num
-      if desired_capacity > WORKER_INSTANCE_LIMIT
-        @@logger.warn "Desired capacity of #{desired_capacity} limited to #{WORKER_INSTANCE_LIMIT}."
-        desired_capacity = WORKER_INSTANCE_LIMIT
-      end
-
-      @@logger.info "Setting desired capacity of #{asg_name} to #{desired_capacity} instances."
-
-      @@client.autoscale.set_desired_capacity(
-        auto_scaling_group_name: asg_name,
-        desired_capacity: desired_capacity
-      )
-
-      return desired_capacity
-    else
+    if asg.nil?
       @@logger.error "Could not find an autoscale group name starting with [#{CONFIG_NAME_BASE}]."
+      return 0
     end
+
+    if asg.desired_capacity == WORKER_INSTANCE_LIMIT
+      @@logger.error "Limit of #{WORKER_INSTANCE_LIMIT} instances reached; not scaling-up."
+      return WORKER_INSTANCE_LIMIT
+    end
+
+    new_capacity = asg.desired_capacity + num
+    if new_capacity > WORKER_INSTANCE_LIMIT
+      @@logger.warn "Desired capacity of #{new_capacity} limited to #{WORKER_INSTANCE_LIMIT}."
+      new_capacity = WORKER_INSTANCE_LIMIT
+    end
+
+    @@logger.info "Setting desired capacity of #{asg.auto_scaling_group_name} to #{new_capacity} instances."
+
+    @@client.autoscale.set_desired_capacity(
+      auto_scaling_group_name: asg.auto_scaling_group_name,
+      desired_capacity: new_capacity
+    )
+
+    return new_capacity
   end
 
   def create_autoscale_group(ami_id)
@@ -277,7 +270,25 @@ class AwsHelper
     end
   end
 
-private
+  private
+  def get_active_auto_scaling_group
+    matched_asg = []
+    next_token = :start
+    while next_token
+      options = next_token.eql?(:start) ? {} : { next_token: next_token}
+      resp =  @@client.autoscale.describe_auto_scaling_groups(options)
+      active_asg = resp.auto_scaling_groups.select{|asg| asg.desired_capacity > 0 }
+      active_asg.each do |asg|
+        if asg.tags.select {|h| h.key == 'environment' && h.value == RAILS_ENV}.count > 0
+          matched_asg << asg
+        end
+      end
+      next_token = resp[:next_token]
+    end
+
+    return matched_asg.sort_by{ |asg| asg.created_time }.reverse[0]
+  end
+
   def get_busy_amis
     busy_ami = []
 
