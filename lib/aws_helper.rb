@@ -19,7 +19,7 @@ class AwsHelper
       http.open_timeout = 1
       http.read_timeout = 1
       http.get("#{METADATA_URI.path}/instance-id").body
-    rescue Net::OpenTimeout
+    rescue Net::OpenTimeout, Errno::ENETUNREACH
       "NOT_AN_EC2_INSTANCE"
     end
   end
