@@ -262,7 +262,7 @@ class AwsHelper
       end
 
       if ami.name.start_with?(AMI_NAME_BASE)
-        ami.deregister
+        @@client.real_ec2.deregister_image({ image_id: ami.image_id })
         @@logger.info {"cleanup_amis Deleted #{ami.name} #{ami.image_id} #{ami.creation_date}."}
       else
         @@logger.debug {"cleanup_amis Skipped #{ami.name} #{ami.image_id} #{ami.creation_date} (name didn't match)."}
