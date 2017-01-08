@@ -1,3 +1,5 @@
+require 'uri'
+
 class AwsHelper
   PROJECT_TAG             = 'tagtrue'
   RAILS_ENV               = ENV['RAILS_ENV'] || 'development'

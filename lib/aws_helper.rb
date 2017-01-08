@@ -6,11 +6,11 @@ class AwsHelper
   require 'logger'
 
   def initialize(options={})
-    @@client = AwsHelper::Client.new(options)
     @@logger = Logger.new(STDOUT)
     # FIXME: NoMethodError: undefined method `level=' for "method":String
     # @@logger = defined?(Rails.logger) || Logger.new(STDOUT)
     # @@logger.level = ENV['LOG_LEVEL'] ?  Logger.const_get(ENV['LOG_LEVEL'].upcase) : Logger::WARN
+    @client = AwsHelper::Client.new(options)
   end
 
   def self.get_self_instance_id
@@ -22,6 +22,10 @@ class AwsHelper
     rescue Net::OpenTimeout, Errno::ENETUNREACH
       "NOT_AN_EC2_INSTANCE"
     end
+  end
+
+  def get_options
+    return @client.get_aws_options
   end
 
   def reboot_instances
@@ -98,7 +102,7 @@ class AwsHelper
 
     @@logger.info "Setting desired capacity of #{asg.auto_scaling_group_name} to #{new_capacity} instances."
 
-    @@client.autoscale.set_desired_capacity(
+    @client.autoscale.set_desired_capacity(
       auto_scaling_group_name: asg.auto_scaling_group_name,
       desired_capacity: new_capacity
     )
@@ -110,20 +114,15 @@ class AwsHelper
     launch_configuration_name = create_launch_configuration(ami_id)
     autoscale_group_name = get_available_scaling_group_name
 
-    @@client.autoscale.create_auto_scaling_group ({
+    @client.autoscale.create_auto_scaling_group ({
       auto_scaling_group_name: autoscale_group_name,
       launch_configuration_name: launch_configuration_name,
       min_size: 1,
       desired_capacity: 1,
       max_size: WORKER_INSTANCE_LIMIT,
       health_check_grace_period: 300,
-      # It's not worth automating these options until we need larger scale.
-      # When we require need another region, I would start with a simple map of
-      # values for each region; e.g.:
-      # availability_zones = AWS_CONFIG[ENV['DEPLOY_AWS_REGION']].availability_zones
-      # vpc_zone_identifier = AWS_CONFIG[ENV['DEPLOY_AWS_REGION']].vpc_zone_identifier
-      availability_zones: ['us-east-1d'],
-      vpc_zone_identifier: 'subnet-7486405f',
+      availability_zones: @client.get_aws_options[:availability_zones],
+      vpc_zone_identifier: @client.get_aws_options[:vpc_zone_identifier],
       tags: [{ key: 'Name', value: "tagtrue-#{RAILS_ENV}-autoscale", propagate_at_launch: true },
              { key: 'environment', value: RAILS_ENV, propagate_at_launch: true },
              { key: 'project', value: 'tagtrue', propagate_at_launch: true }]
@@ -135,7 +134,7 @@ class AwsHelper
   end
 
   def set_instance_userdata(id, data)
-    instance = @@client.ec2.instances[id]
+    instance = @client.ec2.instances[id]
     if instance.exists?
       instance_stop_and_wait(instance)
       instance.user_data = data
@@ -146,7 +145,7 @@ class AwsHelper
   end
 
   def create_tagtrue_image(instance_id, version)
-    i = @@client.ec2.instances[instance_id]
+    i = @client.ec2.instances[instance_id]
     ami = i.create_image(get_available_ami_name(version),
                          description: 'Ubuntu 15.10')
     ami.add_tag('version', value: version)
@@ -159,7 +158,7 @@ class AwsHelper
     delete_candidates, desired_capacity = get_autoscale_delete_candidates(keep_asg_name)
     @@logger.debug("cleanup_autoscale_groups Selected #{delete_candidates.count} auto scaling groups with total capacity #{desired_capacity}")
 
-    keep_sg =  @@client.autoscale.describe_auto_scaling_groups({
+    keep_sg =  @client.autoscale.describe_auto_scaling_groups({
       auto_scaling_group_names: [keep_asg_name], max_records: 1
       }).auto_scaling_groups[0]
 
@@ -170,7 +169,7 @@ class AwsHelper
         desired_capacity = keep_sg.max_size
       end
 
-      @@client.autoscale.update_auto_scaling_group({
+      @client.autoscale.update_auto_scaling_group({
         auto_scaling_group_name: keep_asg_name,
         desired_capacity: desired_capacity
         })
@@ -182,7 +181,7 @@ class AwsHelper
 
     # Avoid the existing instances to detach and keep running
     delete_candidates.each do |sg|
-      @@client.autoscale.update_auto_scaling_group({
+      @client.autoscale.update_auto_scaling_group({
         auto_scaling_group_name: sg.auto_scaling_group_name,
         min_size: 0,
         max_size: 0,
@@ -194,7 +193,7 @@ class AwsHelper
         @@logger.debug {"cleanup_autoscale_groups Skipped #{sg.auto_scaling_group_name} (too young)."}
         next
       else
-        @@client.autoscale.delete_auto_scaling_group({
+        @client.autoscale.delete_auto_scaling_group({
           auto_scaling_group_name: sg.auto_scaling_group_name,
           force_delete: true
           }
@@ -205,7 +204,7 @@ class AwsHelper
   end
 
   def get_running_worker_instances
-    all_running_instances = @@client.ec2.instances.filter('instance-state-name', 'running')
+    all_running_instances = @client.ec2.instances.filter('instance-state-name', 'running')
     running_worker_instances = all_running_instances.with_tag('project', PROJECT_TAG).with_tag('environment', RAILS_ENV)
     instance_names = running_worker_instances.map(&:id)
 
@@ -218,7 +217,7 @@ class AwsHelper
     next_token = :start
     while next_token
       options = next_token.eql?(:start) ? {} : { next_token: next_token}
-      resp = @@client.autoscale.describe_launch_configurations(options)
+      resp = @client.autoscale.describe_launch_configurations(options)
       configurations = resp.launch_configurations
 
       configurations.each do |lc|
@@ -239,13 +238,13 @@ class AwsHelper
     end
 
     delete_list.each do |lc_name|
-      @@client.autoscale.delete_launch_configuration({ launch_configuration_name: lc_name })
+      @client.autoscale.delete_launch_configuration({ launch_configuration_name: lc_name })
       @@logger.info {"cleanup_launch_configurations Deleted #{lc_name}."}
     end
   end
 
   def cleanup_instances
-    delete_candidates = @@client.ec2.instances.filter('instance-state-name', 'stopped').with_tag('project', PROJECT_TAG)
+    delete_candidates = @client.ec2.instances.filter('instance-state-name', 'stopped').with_tag('project', PROJECT_TAG)
     delete_candidates.select{|i| (Time.now - i.launch_time).to_i/86400 > AWS_OBJECT_CLEANUP_AGE}.each do |i|
       i.terminate
       @@logger.info {"cleanup_instances Deleted instance #{i.instance_id} with launch time #{i.launch_time}"}
@@ -254,7 +253,7 @@ class AwsHelper
 
   def cleanup_amis
     busy_ami = get_busy_amis
-    delete_candidates = @@client.real_ec2.describe_images({ owners: ['self', '453793470413']}).images_set
+    delete_candidates = @client.real_ec2.describe_images({ owners: ['self', '453793470413']}).images_set
     delete_candidates.select{|ami| (Time.now - Time.parse(ami.creation_date)).to_i/86400 > AWS_OBJECT_CLEANUP_AGE}.each do |ami|
       if busy_ami.include?(ami.image_id)
         @@logger.debug {"cleanup_amis Skipped #{ami.image_id} (in use)."}
@@ -262,7 +261,7 @@ class AwsHelper
       end
 
       if ami.name.start_with?(AMI_NAME_BASE)
-        @@client.real_ec2.deregister_image({ image_id: ami.image_id })
+        @client.real_ec2.deregister_image({ image_id: ami.image_id })
         @@logger.info {"cleanup_amis Deleted #{ami.name} #{ami.image_id} #{ami.creation_date}."}
       else
         @@logger.debug {"cleanup_amis Skipped #{ami.name} #{ami.image_id} #{ami.creation_date} (name didn't match)."}
@@ -276,7 +275,7 @@ class AwsHelper
     next_token = :start
     while next_token
       options = next_token.eql?(:start) ? {} : { next_token: next_token}
-      resp =  @@client.autoscale.describe_auto_scaling_groups(options)
+      resp =  @client.autoscale.describe_auto_scaling_groups(options)
       active_asg = resp.auto_scaling_groups.select{|asg| asg.desired_capacity > 0 }
       active_asg.each do |asg|
         if asg.tags.select {|h| h.key == 'environment' && h.value == RAILS_ENV}.count > 0
@@ -295,7 +294,7 @@ class AwsHelper
     next_token = :start
     while next_token
       options = next_token.eql?(:start) ? {} : { next_token: next_token}
-      resp =  @@client.autoscale.describe_launch_configurations(options)
+      resp =  @client.autoscale.describe_launch_configurations(options)
       busy_ami << resp.launch_configurations.map(&:image_id)
       next_token = resp[:next_token]
     end
@@ -309,7 +308,7 @@ class AwsHelper
     next_token = :start
     while next_token
       options = next_token.eql?(:start) ? {} : { next_token: next_token}
-      asg =  @@client.autoscale.describe_auto_scaling_groups(options)
+      asg =  @client.autoscale.describe_auto_scaling_groups(options)
       busy_lc << asg.auto_scaling_groups.map(&:launch_configuration_name)
       next_token = asg[:next_token]
     end
@@ -318,7 +317,7 @@ class AwsHelper
   end
 
   def do_cleanup_autoscale_capacity_wait(keep_asg_name)
-    keep_sg =  @@client.autoscale.describe_auto_scaling_groups({
+    keep_sg =  @client.autoscale.describe_auto_scaling_groups({
       auto_scaling_group_names: [keep_asg_name], max_records: 1
       }).auto_scaling_groups[0]
     t = 0
@@ -327,7 +326,7 @@ class AwsHelper
       @@logger.info {"cleanup_autoscale_groups waited #{t}/#{AwsHelper::INSTANCE_STARTUP_TIME}s for #{keep_asg_name} instance count of #{keep_sg.instances.count} to reach #{keep_sg.desired_capacity}."}
       sleep 5
       t += 5
-      keep_sg =  @@client.autoscale.describe_auto_scaling_groups({
+      keep_sg =  @client.autoscale.describe_auto_scaling_groups({
         auto_scaling_group_names: [keep_asg_name], max_records: 1
         }).auto_scaling_groups[0]
     end
@@ -336,7 +335,7 @@ class AwsHelper
       @@logger.info {"cleanup_autoscale_groups waited #{t}/#{AwsHelper::INSTANCE_STARTUP_TIME}s for instances to be InService."}
       sleep 5
       t += 5
-      keep_sg =  @@client.autoscale.describe_auto_scaling_groups({
+      keep_sg =  @client.autoscale.describe_auto_scaling_groups({
         auto_scaling_group_names: [keep_asg_name], max_records: 1
         }).auto_scaling_groups[0]
 
@@ -350,7 +349,7 @@ class AwsHelper
   end
 
   def get_autoscale_delete_candidates(keep_asg_name)
-    r = @@client.autoscale.describe_auto_scaling_groups
+    r = @client.autoscale.describe_auto_scaling_groups
     delete_candidates = []
     deleted_capacity = 0
 
@@ -386,11 +385,11 @@ class AwsHelper
   def get_available_ami_name(version)
     i = 1
     ami_name = "#{AMI_NAME_BASE}#{version}_#{i}"
-    ic = @@client.ec2.images.filter('name', ami_name)
+    ic = @client.ec2.images.filter('name', ami_name)
     until 0 == ic.count
       i += 1
       ami_name = "#{AMI_NAME_BASE}#{version}_#{i}"
-      ic = @@client.ec2.images.filter('name', ami_name)
+      ic = @client.ec2.images.filter('name', ami_name)
     end
 
     return ami_name
@@ -424,10 +423,10 @@ class AwsHelper
   def create_launch_configuration(ami_id)
     launch_configuration_name = get_available_launch_configuration_name
 
-    @@client.autoscale.create_launch_configuration({
+    @client.autoscale.create_launch_configuration({
       launch_configuration_name: launch_configuration_name,
       key_name: 'id_lens10',
-      security_groups: ['sg-57142f2e'],
+      security_groups: @client.get_aws_options[:security_groups],
       image_id: ami_id,
       instance_type: 't2.large',
       instance_monitoring: {
@@ -445,11 +444,11 @@ class AwsHelper
   def get_available_launch_configuration_name
     i = 1
     launch_configuration_name = "#{CONFIG_NAME_BASE}#{Date.today.iso8601}_#{i}"
-    lc = @@client.autoscale.describe_launch_configurations({launch_configuration_names: [launch_configuration_name]})
+    lc = @client.autoscale.describe_launch_configurations({launch_configuration_names: [launch_configuration_name]})
     until 0 == lc.launch_configurations.count
       i += 1
       launch_configuration_name = "#{CONFIG_NAME_BASE}#{Date.today.iso8601}_#{i}"
-      lc = @@client.autoscale.describe_launch_configurations({launch_configuration_names: [launch_configuration_name]})
+      lc = @client.autoscale.describe_launch_configurations({launch_configuration_names: [launch_configuration_name]})
     end
 
     return launch_configuration_name
@@ -458,18 +457,18 @@ class AwsHelper
   def get_available_scaling_group_name
     i = 1
     scaling_group_name = "#{CONFIG_NAME_BASE}#{Date.today.iso8601}_#{i}"
-    sg = @@client.autoscale.describe_auto_scaling_groups({auto_scaling_group_names: [scaling_group_name]})
+    sg = @client.autoscale.describe_auto_scaling_groups({auto_scaling_group_names: [scaling_group_name]})
     until 0 == sg.auto_scaling_groups.count
       i += 1
       scaling_group_name = "#{CONFIG_NAME_BASE}#{Date.today.iso8601}_#{i}"
-      sg = @@client.autoscale.describe_auto_scaling_groups({auto_scaling_group_names: [scaling_group_name]})
+      sg = @client.autoscale.describe_auto_scaling_groups({auto_scaling_group_names: [scaling_group_name]})
     end
 
     return scaling_group_name
   end
 
   def configure_autoscale_policies(group_name)
-    scale_up_arn = @@client.autoscale.put_scaling_policy({
+    scale_up_arn = @client.autoscale.put_scaling_policy({
       auto_scaling_group_name: group_name,
       policy_name: "#{CONFIG_NAME_BASE}_scale_up_policy",
       scaling_adjustment: 3,
@@ -477,7 +476,7 @@ class AwsHelper
       cooldown: 60
     })[:policy_arn]
 
-    scale_down_arn = @@client.autoscale.put_scaling_policy({
+    scale_down_arn = @client.autoscale.put_scaling_policy({
       auto_scaling_group_name: group_name,
       policy_name: "#{CONFIG_NAME_BASE}_scale_down_policy",
       scaling_adjustment: -2,
@@ -485,7 +484,7 @@ class AwsHelper
       cooldown: 60
     })[:policy_arn]
 
-    @@client.cloudwatch.put_metric_alarm({
+    @client.cloudwatch.put_metric_alarm({
       :alarm_name => "#{CONFIG_NAME_BASE}_scale_up_policy_alarm",
       :actions_enabled => true,
       :alarm_actions => [scale_up_arn],
@@ -499,7 +498,7 @@ class AwsHelper
       :comparison_operator=>"GreaterThanOrEqualToThreshold"
     })
 
-    @@client.cloudwatch.put_metric_alarm({
+    @client.cloudwatch.put_metric_alarm({
       :alarm_name => "#{CONFIG_NAME_BASE}_scale_down_policy_alarm",
       :actions_enabled => true,
       :alarm_actions => [scale_down_arn],
