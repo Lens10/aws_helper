@@ -146,8 +146,10 @@ class AwsHelper
 
   def create_tagtrue_image(instance_id, version)
     i = @client.ec2.instances[instance_id]
+    instance_stop_and_wait(i)
     ami = i.create_image(get_available_ami_name(version),
-                         description: 'Ubuntu 15.10')
+                         description: 'DataTrue image',
+                         no_reboot: true)
     ami.add_tag('version', value: version)
     ami.add_tag('created_at', value: DateTime.now.iso8601)
 
