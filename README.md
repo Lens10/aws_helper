@@ -67,7 +67,13 @@ The default RAILS_ENV is `development`.  The default LOG_LEVEL is `WARN` and it 
 
 `add_instances(n)`: adds n instances to the current autoscale group.  The current autoscale group is the first one that matches the name filter.  Autoscale groups should sort naturally (see `create_autoscale_group` below) and the first match should always be the latest one to be created.  Returns the autoscale group's new desired capacity.
 
-`create_autoscale_group(ami_id)`: creates a new auto scaling group configuration using `ami_id` to create its required launch configuration.  The following options are currently hard-coded: `key_name: 'id_lens10'`, `security_groups: ['sg-57142f2e']`, `instance_type: 't2.large'` (there are others, see `configure_autoscale_policies` in `lib/aws_helper.rb`).  It returns the name of the newly created auto scaling group in this format: `"#{CONFIG_NAME_BASE}#{Date.today.iso8601}_#{i}"`.
+`create_autoscale_group(ami_id, associate_public_ip=false)`: creates a new auto
+scaling group configuration using `ami_id` to create its required launch
+configuration.  The following options are currently hard-coded: `key_name`,
+`security_groups`, `instance_type` (see `configure_autoscale_policies` in
+`lib/aws_helper.rb` for values and other options).  It returns the name of the newly created auto
+scaling group in this format:
+`"#{CONFIG_NAME_BASE}#{Date.today.iso8601}_#{i}"`.
 
 `set_instance_userdata(id, data)`: **stops** ec2 instance with instance_id `id` and writes `data` to the [instance user-data storage](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ec2-instance-metadata.html#instancedata-add-user-data). The instance user data can be accessed locally, e.g.: `curl http://169.254.169.254/latest/user-data`.
 

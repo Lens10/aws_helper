@@ -110,8 +110,8 @@ class AwsHelper
     return new_capacity
   end
 
-  def create_autoscale_group(ami_id)
-    launch_configuration_name = create_launch_configuration(ami_id)
+  def create_autoscale_group(ami_id, associate_public_ip=false)
+    launch_configuration_name = create_launch_configuration(ami_id, associate_public_ip)
     autoscale_group_name = get_available_scaling_group_name
 
     @client.autoscale.create_auto_scaling_group ({
@@ -422,7 +422,7 @@ class AwsHelper
     return j > timeout
   end
 
-  def create_launch_configuration(ami_id)
+  def create_launch_configuration(ami_id, associate_public_ip=false)
     launch_configuration_name = get_available_launch_configuration_name
 
     @client.autoscale.create_launch_configuration({
@@ -435,7 +435,7 @@ class AwsHelper
         enabled: false,
       },
       ebs_optimized: false,
-      associate_public_ip_address: false,
+      associate_public_ip_address: associate_public_ip,
       placement_tenancy: "default",
       user_data: Base64.encode64(RAILS_ENV)
     })
