@@ -430,7 +430,7 @@ class AwsHelper
       key_name: 'id_lens10',
       security_groups: @client.get_aws_options[:security_groups],
       image_id: ami_id,
-      instance_type: 't2.large',
+      instance_type: 't3.large',
       instance_monitoring: {
         enabled: false,
       },
