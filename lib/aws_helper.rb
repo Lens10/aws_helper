@@ -255,7 +255,7 @@ class AwsHelper
 
   def cleanup_amis
     busy_ami = get_busy_amis
-    delete_candidates = @client.real_ec2.describe_images({ owners: ['self', '453793470413']}).images_set
+    delete_candidates = @client.real_ec2.describe_images({ owners: ['self', '453793470413']}).images
     delete_candidates.select{|ami| (Time.now - Time.parse(ami.creation_date)).to_i/86400 > AWS_OBJECT_CLEANUP_AGE}.each do |ami|
       if busy_ami.include?(ami.image_id)
         @@logger.debug {"cleanup_amis Skipped #{ami.image_id} (in use)."}

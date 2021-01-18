@@ -1,5 +1,5 @@
 class AwsHelper::Client
-  require 'aws-sdk-v1'
+  require 'aws-sdk'
   require 'net/http'
 
   attr_reader :autoscale, :cloudwatch, :ec2, :real_ec2
@@ -26,18 +26,18 @@ class AwsHelper::Client
 
 private
   def get_real_ec2_client
-    AWS::EC2::Client.new(@aws_options)
+    Aws::EC2::Client.new(@aws_options)
   end
 
   def get_ec2_client
-    AWS::EC2.new(@aws_options)
+    Aws::EC2.new(@aws_options)
   end
 
   def get_autoscale_client
-    AWS::AutoScaling::Client.new(@aws_options)
+    Aws::AutoScaling::Client.new(@aws_options)
   end
 
   def get_cloudwatch_client
-    AWS::CloudWatch::Client::new(@aws_options)
+    Aws::CloudWatch::Client::new(@aws_options)
   end
 end
