@@ -1,5 +1,7 @@
 class AwsHelper::Client
-  require 'aws-sdk'
+  require 'aws-sdk-ec2'
+  require 'aws-sdk-cloudwatch'
+  require 'aws-sdk-autoscaling'
   require 'net/http'
 
   attr_reader :autoscale, :cloudwatch, :ec2, :real_ec2
