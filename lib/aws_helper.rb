@@ -121,8 +121,8 @@ class AwsHelper
       desired_capacity: 1,
       max_size: WORKER_INSTANCE_LIMIT,
       health_check_grace_period: 300,
-      availability_zones: @client.get_aws_options[:availability_zones],
-      vpc_zone_identifier: @client.get_aws_options[:vpc_zone_identifier],
+      availability_zones: @client.availability_zones,
+      vpc_zone_identifier: @client.vpc_zone_identifier,
       tags: [{ key: 'Name', value: "tagtrue-#{RAILS_ENV}-autoscale", propagate_at_launch: true },
              { key: 'environment', value: RAILS_ENV, propagate_at_launch: true },
              { key: 'project', value: 'tagtrue', propagate_at_launch: true }]
@@ -428,7 +428,7 @@ class AwsHelper
     @client.autoscale.create_launch_configuration({
       launch_configuration_name: launch_configuration_name,
       key_name: 'id_lens10',
-      security_groups: @client.get_aws_options[:security_groups],
+      security_groups: @client.security_groups,
       image_id: ami_id,
       instance_type: 't3.large',
       instance_monitoring: {
