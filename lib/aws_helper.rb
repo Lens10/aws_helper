@@ -134,7 +134,10 @@ class AwsHelper
   end
 
   def set_instance_userdata(id, data)
-    instance = @client.ec2.instances[id]
+    instance = Aws::EC2::Instance.new(
+      id,
+      client: @client.ec2
+    )
     if instance.exists?
       instance_stop_and_wait(instance)
       instance.user_data = data
@@ -145,13 +148,19 @@ class AwsHelper
   end
 
   def create_tagtrue_image(instance_id, version)
-    i = @client.ec2.instances[instance_id]
+    i = Aws::EC2::Instance.new(
+      instance_id,
+      client: @client.ec2
+    )
     instance_stop_and_wait(i)
-    ami = i.create_image(get_available_ami_name(version),
+    ami = i.create_image(name: get_available_ami_name(version),
                          description: 'DataTrue image',
                          no_reboot: true)
-    ami.add_tag('version', value: version)
-    ami.add_tag('created_at', value: DateTime.now.iso8601)
+
+    ami.create_tags(tags: [
+      { key: 'version', value: version },
+      { key: 'created_at', value: DateTime.now.iso8601 }
+    ])
 
     return ami
   end
@@ -206,8 +215,13 @@ class AwsHelper
   end
 
   def get_running_worker_instances
-    all_running_instances = @client.ec2.instances.filter('instance-state-name', 'running')
-    running_worker_instances = all_running_instances.with_tag('project', PROJECT_TAG).with_tag('environment', RAILS_ENV)
+    running_worker_instances = @client.ec2.describe_instances(filters: [
+      { name: 'instance-state-name', values: 'running' },
+      { name: 'tag:project', values: PROJECT_TAG },
+      { name: 'environment', values: RAILS_ENV }
+    ]).reservations
+      .flat_map { |r| r.instances }
+      .map { |i| Aws::EC2::Instance.new(i.instance_id, client: @client.ec2) }
     instance_names = running_worker_instances.map(&:id)
 
     return running_worker_instances, instance_names
@@ -246,7 +260,12 @@ class AwsHelper
   end
 
   def cleanup_instances
-    delete_candidates = @client.ec2.instances.filter('instance-state-name', 'stopped').with_tag('project', PROJECT_TAG)
+    delete_candidates = @client.ec2.describe_instances(filters: [
+      { name: 'instance-state-name', values: ['stopped'] },
+      { name: 'tag:project', values: [PROJECT_TAG] }
+    ]).reservations
+      .flat_map { |r| r.instances }
+      .map { |i| Aws::EC2::Instance.new(i.instance_id, client: @client.ec2) }
     delete_candidates.select{|i| (Time.now - i.launch_time).to_i/86400 > AWS_OBJECT_CLEANUP_AGE}.each do |i|
       i.terminate
       @@logger.info {"cleanup_instances Deleted instance #{i.instance_id} with launch time #{i.launch_time}"}
@@ -255,7 +274,7 @@ class AwsHelper
 
   def cleanup_amis
     busy_ami = get_busy_amis
-    delete_candidates = @client.real_ec2.describe_images({ owners: ['self', '453793470413']}).images
+    delete_candidates = @client.ec2.describe_images({ owners: ['self', '453793470413']}).images
     delete_candidates.select{|ami| (Time.now - Time.parse(ami.creation_date)).to_i/86400 > AWS_OBJECT_CLEANUP_AGE}.each do |ami|
       if busy_ami.include?(ami.image_id)
         @@logger.debug {"cleanup_amis Skipped #{ami.image_id} (in use)."}
@@ -263,7 +282,7 @@ class AwsHelper
       end
 
       if ami.name.start_with?(AMI_NAME_BASE)
-        @client.real_ec2.deregister_image({ image_id: ami.image_id })
+        @client.ec2.deregister_image({ image_id: ami.image_id })
         @@logger.info {"cleanup_amis Deleted #{ami.name} #{ami.image_id} #{ami.creation_date}."}
       else
         @@logger.debug {"cleanup_amis Skipped #{ami.name} #{ami.image_id} #{ami.creation_date} (name didn't match)."}
@@ -387,11 +406,15 @@ class AwsHelper
   def get_available_ami_name(version)
     i = 1
     ami_name = "#{AMI_NAME_BASE}#{version}_#{i}"
-    ic = @client.ec2.images.filter('name', ami_name)
+    ic = @client.ec2.describe_images(filters: [
+      { name: 'name', values: [ami_name] }
+    ]).images
     until 0 == ic.count
       i += 1
       ami_name = "#{AMI_NAME_BASE}#{version}_#{i}"
-      ic = @client.ec2.images.filter('name', ami_name)
+      ic = @client.ec2.describe_images(filters: [
+        { name: 'name', values: [ami_name] }
+      ]).images
     end
 
     return ami_name
@@ -400,26 +423,12 @@ class AwsHelper
   # v2 of aws-sdk has built-in wait states but v1 doesn't :(
   def instance_stop_and_wait(instance, timeout=REBOOT_TIMEOUT)
     instance.stop
-
-    j = 0
-    until instance.status == :stopped || j > timeout
-      sleep(1)
-      j += 1
-    end
-
-    return j > timeout
+    @client.ec2.wait_until(:instance_stopped, instance_ids: [instance.id])
   end
 
   def instance_start_and_wait(instance, timeout=REBOOT_TIMEOUT)
     instance.start
-
-    j = 0
-    until instance.status == :running || j > timeout
-      sleep(1)
-      j += 1
-    end
-
-    return j > timeout
+    @client.ec2.wait_until(:instance_running, instance_ids: [instance.id])
   end
 
   def create_launch_configuration(ami_id, associate_public_ip=false)
