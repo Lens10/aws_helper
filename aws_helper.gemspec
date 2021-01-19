@@ -15,5 +15,7 @@ Gem::Specification.new do |s|
   s.homepage      = 'https://github.com/Lens10/aws_helper'
   s.license       = 'Proprietary'
 
-  s.add_runtime_dependency 'aws-sdk-v1', ['~> 1.66']
+  s.add_runtime_dependency 'aws-sdk-ec2', ['~> 1.220']
+  s.add_runtime_dependency 'aws-sdk-cloudwatch', ['~> 1.47']
+  s.add_runtime_dependency 'aws-sdk-autoscaling', ['~> 1.53']
 end
