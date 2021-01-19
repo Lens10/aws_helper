@@ -420,7 +420,6 @@ class AwsHelper
     return ami_name
   end
 
-  # v2 of aws-sdk has built-in wait states but v1 doesn't :(
   def instance_stop_and_wait(instance, timeout=REBOOT_TIMEOUT)
     instance.stop
     @client.ec2.wait_until(:instance_stopped, instance_ids: [instance.id])
